@@ -31,7 +31,8 @@
   --safe-t:env(safe-area-inset-top,0px);
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
-html,body{background:var(--bg);color:var(--t1);font-family:'DM Sans',sans-serif;font-weight:300;min-height:100dvh;overscroll-behavior:none;}
+html{background:var(--bg);}
+body{background:var(--bg);color:var(--t1);font-family:'DM Sans',sans-serif;font-weight:300;min-height:100dvh;overscroll-behavior:none;overflow-y:auto;-webkit-overflow-scrolling:touch;}
 
 /* NAV */
 .nav{position:fixed;bottom:0;left:0;right:0;z-index:100;background:rgba(14,14,16,.95);
@@ -278,6 +279,7 @@ input[type=number]{width:60px;text-align:center;}
 <!-- HOME -->
 <div class="pg on" id="pg-home">
   <div id="home-hero"></div>
+  <div id="home-cycle-btn" style="margin-bottom:14px;"></div>
   <div class="sec">Следующая тренировка</div>
   <div id="home-next"></div>
   <div id="home-btn" style="margin-top:10px;"></div>
@@ -582,7 +584,7 @@ const DEFAULT_PROGRAMS=[
 
 /* ═══ STORAGE ═══ */
 const C={
-  get start(){return localStorage.getItem('cs')||'2025-03-28';},
+  get start(){return localStorage.getItem('cs')||'2026-03-28';},
   get len(){return +(localStorage.getItem('cl')||21);},
   get mens(){return +(localStorage.getItem('cm')||5);},
   get pms(){return +(localStorage.getItem('cp')||5);},
@@ -599,7 +601,7 @@ function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2
 function cycleDay(fromDate){
   const s=new Date(C.start),t=fromDate?new Date(fromDate):new Date();
   s.setHours(0,0,0,0);t.setHours(0,0,0,0);
-  const diff=Math.floor((t-s)/86400000);
+  const diff=Math.floor((t-s)/86400000); // 0 = first day of cycle = day 1
   return((diff%C.len)+C.len)%C.len+1;
 }
 
@@ -634,7 +636,7 @@ let calOffset=0; // months offset from today
 function calShift(d){calOffset+=d;renderCal();}
 
 function renderCal(){
-  const today=new Date(2026,3,14); // April 14 2026
+  const today=new Date();
   const viewDate=new Date(today.getFullYear(),today.getMonth()+calOffset,1);
   const year=viewDate.getFullYear(), month=viewDate.getMonth();
   document.getElementById('cal-month-label').textContent=
@@ -706,8 +708,8 @@ function renderCal(){
   for(let d=1;d<=daysInMonth;d++){
     const absDate=new Date(year,month,d);
     const absDateStr=absDate.toISOString().slice(0,10).slice(0,10);
-    const todayStr='2026-04-14';
-    const isToday=(year===2026&&month===3&&d===14);
+    const todayStr=today.toISOString().slice(0,10);
+    const isToday=(year===today.getFullYear()&&month===today.getMonth()&&d===today.getDate());
     const pk=phaseForAbsDate(absDate);
     const isWorkout=workoutDates.has(absDate.toISOString().slice(0,10));
     const isRec=recDays.has(absDate.toISOString().slice(0,10));
@@ -753,14 +755,22 @@ function renderCal(){
 }
 
 /* ═══ HOME ═══ */
+function markCycleStart(){
+  if(!confirm('Отметить сегодня как первый день цикла?'))return;
+  const todayStr=new Date().toISOString().slice(0,10);
+  localStorage.setItem('cs',todayStr);
+  renderAll();
+}
+
 function renderHome(){
-  const today=new Date(2026,3,14);
+  const today=new Date();
+  const progs=getProgs().filter(p=>p.active&&p.days.length);
   const day=cycleDay(today), pk=getPhaseKey(day), ph=PH[pk];
   document.getElementById('home-hero').innerHTML=`
     <div class="ph-hero" style="--phc:${ph.col};--phg:${ph.glow};">
       <div class="ph-tag">${ph.name} · День цикла ${day} из ${C.len}</div>
       <div class="ph-name" style="color:${ph.col}">${ph.name}</div>
-      <div class="ph-sub">Вторник, 14 апреля 2026</div>
+      <div class="ph-sub" id="home-date-sub"></div>
       <div class="e-row">
         <span style="font-size:11px;color:var(--t2);white-space:nowrap">Энергия</span>
         <div class="e-track"><div class="e-fill" style="width:${ph.energy}%;background:${ph.col}"></div></div>
@@ -769,7 +779,21 @@ function renderHome(){
       <div class="ph-tip" style="border-left-color:${ph.col}">${ph.tipT}</div>
     </div>`;
 
-  const progs=getProgs().filter(p=>p.active&&p.days.length);
+  // fill real date
+  const todayLabel=new Date().toLocaleDateString('ru-RU',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  const dateEl=document.getElementById('home-date-sub');
+  if(dateEl)dateEl.textContent=todayLabel;
+
+  // cycle start button
+  const todayDateStr=new Date().toISOString().slice(0,10);
+  const isTodayStart=C.start===todayDateStr;
+  const cycleBtn=document.getElementById('home-cycle-btn');
+  if(cycleBtn){
+    cycleBtn.innerHTML=isTodayStart
+      ?`<div style="display:flex;align-items:center;gap:8px;background:rgba(196,92,92,.1);border:1px solid rgba(196,92,92,.2);border-radius:12px;padding:11px 14px;font-size:13px;color:#c45c5c;">🩸 Сегодня отмечено начало цикла · День 1</div>`
+      :`<button class="btn btn-g" style="border-color:rgba(196,92,92,.3);color:#c45c5c;" onclick="markCycleStart()">🩸 Сегодня начался цикл</button>`;
+  }
+
   const log=getLog();
   let next=null;
   if(progs.length){
@@ -813,7 +837,7 @@ function startWs(progId,dayId){
 }
 
 function showCw(){
-  const day=cycleDay(new Date(2026,3,14)), pk=getPhaseKey(day), ph=PH[pk];
+  const day=cycleDay(new Date()), pk=getPhaseKey(day), ph=PH[pk];
   document.getElementById('cw-icon').textContent=ph.icon;
   document.getElementById('cw-ph').textContent=ph.name;
   document.getElementById('cw-ph').style.color=ph.col;
@@ -833,7 +857,7 @@ function openWsScreen(){
   const exes=day.exerciseIds.map(id=>getEx().find(e=>e.id===id)).filter(Boolean);
   document.getElementById('ws-title').textContent=prog?.name||'';
   document.getElementById('ws-prog').textContent=`${exes.length} упражнений`;
-  const pk=getPhaseKey(cycleDay(new Date(2026,3,14))), ph=PH[pk];
+  const pk=getPhaseKey(cycleDay(new Date())), ph=PH[pk];
   const pill=document.getElementById('ws-ph-pill');
   pill.textContent=ph.name;pill.style.cssText=`background:${ph.bg};color:${ph.col};`;
   renderWsList(exes);
@@ -876,7 +900,7 @@ function finishWs(){
   const prog=getProgs().find(p=>p.id===wsProgId);
   const day=prog?.days.find(d=>d.id===wsDayId);
   const exes=day.exerciseIds.map(id=>getEx().find(e=>e.id===id)).filter(Boolean);
-  const pk=getPhaseKey(cycleDay(new Date(2026,3,14)));
+  const pk=getPhaseKey(cycleDay(new Date()));
   const entry={
     date:new Date().toISOString(),progId:wsProgId,dayId:wsDayId,
     progName:prog?.name||'',dayName:day?.name||'',phaseKey:pk,
